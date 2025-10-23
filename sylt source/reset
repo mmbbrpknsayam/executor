@@ -1,0 +1,14 @@
+string[] processNames = { "Decompiler", "RobloxPlayerbeta", "RobloxStudio" };
+foreach (var name in processNames)
+{
+    try
+    {
+        foreach (var process in Process.GetProcessesByName(name))
+        {
+            process.Kill();
+        }
+    }
+    catch
+    {
+    }
+}
