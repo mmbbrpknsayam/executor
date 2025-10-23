@@ -1,0 +1,9 @@
+var proc = Process.GetProcessesByName("RobloxPlayerBeta").FirstOrDefault();
+if (proc == null)
+{
+
+}
+if (API.IsAttached(proc.Id))
+{
+
+}
