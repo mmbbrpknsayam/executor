@@ -62,10 +62,10 @@ Toggle1:OnChanged(function()
 
     if infstam then
 		customstam.DefaultConfig.StaminaLossDisabled = true
-		customstam.StaminaLossDisabled = true
+		customstam.module_upvr.StaminaLossDisabled = true
 	else
 		customstam.DefaultConfig.StaminaLossDisabled = false
-		customstam.StaminaLossDisabled = false
+		customstam.module_upvr.StaminaLossDisabled = false
 	end
 end)
 
@@ -685,15 +685,15 @@ Toggle23:OnChanged(function()
             repeat
                 itemsFolder = getActiveMap()
                 task.wait(1)
-            until itemsFolder or not espEnabled
-            if not espEnabled then return end
+            until itemsFolder or not espitem
+            if not espitem then return end
 
             for _, model in pairs(itemsFolder:GetChildren()) do
                 createTextESP(model)
             end
 
             mapConnection = itemsFolder.ChildAdded:Connect(function(newModel)
-                if espEnabled then
+                if espitem then
                     createTextESP(newModel)
                 end
             end)
@@ -712,12 +712,12 @@ Toggle23:OnChanged(function()
                     end
                     mapConnection = nil
                     task.wait(0.5)
-                    if espEnabled then
+                    if espitem then
                         for _, model in pairs(newMap:GetChildren()) do
                             createTextESP(model)
                         end
                         mapConnection = newMap.ChildAdded:Connect(function(newModel)
-                            if espEnabled then
+                            if espitem then
                                 createTextESP(newModel)
                             end
                         end)
@@ -797,7 +797,7 @@ if settings.gentime then
     gentime = val
 end
 
-local Toggle30 = Tabs.Main:CreateToggle("MyToggle", {Title = "afk generator (legit)", Default = settings.afkgen or false})
+local Toggle30 = Tabs.Main:CreateToggle("MyToggle", {Title = "afk money (legit)", Default = settings.afkgen or false})
 local afkgen = false
 local genConnections = {}
 local repairThread, repairing, currentGen = nil, false, nil
