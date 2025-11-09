@@ -794,7 +794,7 @@ local Input = Tabs.Main:CreateInput("Input", {
 })
 
 if settings.gentime then
-    gentime = val
+    gentime = settings.gentime
 end
 
 local Toggle30 = Tabs.Main:CreateToggle("MyToggle", {Title = "afk money (legit)", Default = settings.afkgen or false})
