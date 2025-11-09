@@ -642,7 +642,7 @@ Toggle23:OnChanged(function()
         mapConnection = nil
     end
 
-    if espEnabled then
+    if espitem then
         local function createTextESP(model)
             if not model:IsA("Model") then return end
             if not model:FindFirstChildWhichIsA("BasePart") then return end
