@@ -836,6 +836,8 @@ Toggle30:OnChanged(function()
     end
 
     afkgen = not afkgen
+	settings.afkgen = afkgen
+	SaveSettings()
 
     if afkgen then
 		game:GetService("GuiService").TouchControlsEnabled = false
@@ -855,7 +857,7 @@ Toggle30:OnChanged(function()
         local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
         local function moveTo(targetPart)
-            if not maingen then return end
+            if not afkgen then return end
             if not targetPart or not targetPart.Position then return end
 
             local path = PathfindingService:CreatePath({
@@ -867,7 +869,7 @@ Toggle30:OnChanged(function()
             path:ComputeAsync(HumanoidRootPart.Position, targetPart.Position)
             if path.Status == Enum.PathStatus.Success then
                 for _, waypoint in ipairs(path:GetWaypoints()) do
-                    if not maingen then return end
+                    if not afkgen then return end
                     Humanoid:MoveTo(waypoint.Position)
                     Humanoid.MoveToFinished:Wait()
                 end
@@ -876,12 +878,12 @@ Toggle30:OnChanged(function()
                 Humanoid.MoveToFinished:Wait()
             end
 
-            repeat task.wait(0.1) until not maingen or (HumanoidRootPart.Position - targetPart.Position).Magnitude < 5
+            repeat task.wait(0.1) until not afkgen or (HumanoidRootPart.Position - targetPart.Position).Magnitude < 5
         end
 
         local function startAutoRepair(generator)
             stopAutoRepair()
-            if not maingen then return end
+            if not afkgen then return end
             if not generator or not generator.Parent then return end
 
             local progress = generator:FindFirstChild("Progress")
@@ -896,7 +898,7 @@ Toggle30:OnChanged(function()
             repairing = true
 
             task.spawn(function()
-                while repairing and currentGen == generator and maingen do
+                while repairing and currentGen == generator and afkgen do
                     local puzzleUI = Players.LocalPlayer.PlayerGui:FindFirstChild("PuzzleUI")
                     if not puzzleUI and progress.Value < 100 then
                         local positions = generator:FindFirstChild("Positions")
@@ -916,7 +918,7 @@ Toggle30:OnChanged(function()
 
             repairThread = task.spawn(function()
                 task.spawn(function()
-                    while repairing and currentGen == generator and maingen do
+                    while repairing and currentGen == generator and afkgen do
                         if progress.Value >= 100 then
                             stopAutoRepair()
                             break
@@ -925,7 +927,7 @@ Toggle30:OnChanged(function()
                     end
                 end)
 
-                while repairing and currentGen == generator and maingen do
+                while repairing and currentGen == generator and afkgen do
                     task.wait(gentime)
                     if repairing and progress.Value < 100 then
                         pcall(function()
@@ -937,7 +939,7 @@ Toggle30:OnChanged(function()
         end
 
         local function getNearestGeneratorBelow100()
-            if not maingen then return end
+            if not afkgen then return end
             local mapFolder = workspace:FindFirstChild("Map")
             if not mapFolder then return nil end
 
@@ -972,7 +974,7 @@ Toggle30:OnChanged(function()
 
             repeat task.wait(1) until map:FindFirstChild("Generator")
 
-            while maingen and task.wait(1) do
+            while afkgen and task.wait(1) do
                 if repairing then continue end
                 local gen = getNearestGeneratorBelow100()
                 if not gen then
@@ -986,7 +988,7 @@ Toggle30:OnChanged(function()
 
                 local positions = {"Center", "Right", "Left"}
                 for _, posName in ipairs(positions) do
-                    if not maingen then return end
+                    if not afkgen then return end
                     local targetPart = positionsFolder:FindFirstChild(posName)
                     if targetPart then
                         print("Moving to", posName, "of", gen.Name)
