@@ -838,7 +838,7 @@ Toggle30:OnChanged(function()
     afkgen = not afkgen
 
     if afkgen then
-		game:GetService("GuiService").TouchControlsEnable = false
+		game:GetService("GuiService").TouchControlsEnabled = false
 
         local Players = game:GetService("Players")
         local PathfindingService = game:GetService("PathfindingService")
@@ -1041,7 +1041,7 @@ Toggle30:OnChanged(function()
         task.spawn(initAutoSystem)
 
     else
-		game:GetService("GuiService").TouchControlsEnable = true
+		game:GetService("GuiService").TouchControlsEnabled = true
         cleanupAll()
     end
 end)
