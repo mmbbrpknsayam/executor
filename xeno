@@ -1,0 +1,1053 @@
+local HttpService = game:GetService("HttpService")
+
+local Config = {
+    Folder = "Cloud Hub",
+    File = "Forsaken.json"
+}
+
+if not isfolder(Config.Folder) then
+    makefolder(Config.Folder)
+end
+
+local filePath = Config.Folder .. "/" .. Config.File
+
+local settings
+if not isfile(filePath) then
+    writefile(filePath, "{}")
+    settings = {}
+else
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(readfile(filePath))
+    end)
+    settings = success and result or {}
+end
+
+local function SaveSettings()
+    writefile(filePath, HttpService:JSONEncode(settings))
+end
+
+local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+
+local Window = Library:CreateWindow{
+    Title = 'Forsaken by Cloud',
+    SubTitle = "https://discord.gg/tkA8JkqS8",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(830, 525),
+    Resize = true,
+    MinSize = Vector2.new(470, 380),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+}
+
+local Tabs = {
+    Main = Window:CreateTab{
+        Title = "Main",
+        Icon = "nil"
+    }
+}
+
+local customstam = require(game.ReplicatedStorage.Systems.Character.Game.Sprinting)
+
+local Toggle1 = Tabs.Main:CreateToggle("MyToggle", {Title = "inf stamina", Default = settings.infstam or false})
+Toggle1:OnChanged(function()
+    if not Toggle1Interacted then
+        Toggle1Interacted = true
+        return
+    end
+
+    infstam = not infstam
+    settings.infstam = infstam
+    SaveSettings()
+
+    if infstam then
+		customstam.DefaultConfig.StaminaLossDisabled = true
+		customstam.StaminaLossDisabled = true
+	else
+		customstam.DefaultConfig.StaminaLossDisabled = false
+		customstam.StaminaLossDisabled = false
+	end
+end)
+
+if settings.infstam then
+    task.spawn(function()
+        Toggle1:SetValue(true)
+    end)
+end
+
+local Toggle2 = Tabs.Main:CreateToggle("MyToggle", {Title = "auto generator", Default = settings.maingen or false})
+
+local repairing = false
+local currentGen = nil
+local repairThread = nil
+local genConnections = {}
+
+local function stopAutoRepair()
+    if repairThread then
+        pcall(task.cancel, repairThread)
+        repairThread = nil
+    end
+    repairing = false
+    currentGen = nil
+end
+
+Toggle2:OnChanged(function()
+    if not Toggle2Interacted then
+        Toggle2Interacted = true
+        return
+    end
+
+    maingen = not maingen
+    settings.maingen = maingen
+    SaveSettings()
+
+    stopAutoRepair()
+    genConnections = {}
+
+    if maingen then
+        local function startAutoRepair(generator)
+            stopAutoRepair()
+            if not generator or not generator.Parent then return end
+
+            local progress = generator:FindFirstChild("Progress")
+            local remotes = generator:FindFirstChild("Remotes")
+            if not (progress and progress:IsA("NumberValue")) then return end
+            if not remotes then return end
+
+            local re = remotes:FindFirstChild("RE")
+            if not (re and re:IsA("RemoteEvent")) then return end
+
+            repairing = true
+            currentGen = generator
+
+            local progressConn
+            progressConn = progress:GetPropertyChangedSignal("Value"):Connect(function()
+                if progress.Value >= 100 then
+                    progressConn:Disconnect()
+                    stopAutoRepair()
+                end
+            end)
+            table.insert(genConnections, progressConn)
+
+            repairThread = task.spawn(function()
+                while repairing and currentGen == generator and maingen do
+                    if progress.Value >= 100 then
+                        stopAutoRepair()
+                        break
+                    end
+                    task.wait(4)
+                    if repairing and progress.Value < 100 and maingen then
+                        pcall(function()
+                            re:FireServer()
+                        end)
+                    end
+                end
+            end)
+        end
+
+        local function setupGenerator(gen)
+            if not gen or not gen:IsA("Model") then return end
+            if genConnections[gen] then return end
+
+            local prompt
+            local main = gen:FindFirstChild("Main")
+            if main then
+                prompt = main:FindFirstChildWhichIsA("ProximityPrompt", true) or main:FindFirstChild("Prompt")
+            end
+            if not prompt then
+                prompt = gen:FindFirstChildWhichIsA("ProximityPrompt", true)
+            end
+
+            if prompt then
+                local conn = prompt.Triggered:Connect(function()
+                    if not maingen then return end
+                    local progress = gen:FindFirstChild("Progress")
+                    if progress and progress.Value < 100 then
+                        startAutoRepair(gen)
+                    end
+                end)
+                table.insert(genConnections, conn)
+                genConnections[gen] = true
+            end
+        end
+
+        local function setupMap()
+            local map = workspace:WaitForChild("Map"):WaitForChild("Ingame"):WaitForChild("Map")
+            for _, g in ipairs(map:GetChildren()) do
+                pcall(setupGenerator, g)
+            end
+
+            map.ChildAdded:Connect(function(child)
+                if maingen then
+                    pcall(setupGenerator, child)
+                end
+            end)
+        end
+
+        setupMap()
+
+        workspace.Map.Ingame.ChildRemoved:Connect(function(child)
+            if child.Name == "Map" and maingen then
+                task.spawn(function()
+                    local newMap = workspace.Map.Ingame:WaitForChild("Map")
+                    setupMap()
+                end)
+            end
+        end)
+
+    else
+        stopAutoRepair()
+        genConnections = {}
+    end
+end)
+
+if settings.maingen then
+    task.spawn(function()
+        Toggle2:SetValue(true)
+    end)
+end
+
+local Toggle3 = Tabs.Main:CreateToggle("MyToggle", {Title = "auto block", Default = settings.blockEnabled or false})
+local blockEnabled = settings.blockEnabled or false
+local Toggle3Interacted = false
+local humConnections = {}
+
+Toggle3:OnChanged(function()
+    if not Toggle3Interacted then
+        Toggle3Interacted = true
+        return
+    end
+
+    blockEnabled = not blockEnabled
+    settings.blockEnabled = blockEnabled
+    SaveSettings()
+
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local workspace = game:GetService("Workspace")
+
+    local LocalPlayer = Players.LocalPlayer
+    local KillersFolder = workspace:WaitForChild("Players"):WaitForChild("Killers")
+    local RANGE = 13
+
+    local TARGET_ANIM_BY_NAME = {
+        ["c00lkidd"] = {
+            ["18885909645"] = {}
+        },
+        ["JohnDoe"] = {
+            ["105458270463374"] = {}
+        },
+        ["Noli"] = {
+            ["106538427162796"] = {}
+        },
+        ["1x1x1x1"] = {
+            ["83829782357897"] = {}
+        },
+        ["Slasher"] = {
+            ["126355327951215"] = {},
+            ["121086746534252"] = {},
+            ["126830014841198"] = {}
+        }
+    }
+
+    local function fireSkill()
+        local args = { "UseActorAbility", { buffer.fromstring("\"Block\"") } }
+        ReplicatedStorage.Modules.Network.RemoteEvent:FireServer(unpack(args))
+    end
+
+    local function hookHumanoid(humanoid, model)
+        local targetAnims = TARGET_ANIM_BY_NAME[model.Name]
+        if not targetAnims then return end
+
+        local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local targetHRP = model:FindFirstChild("HumanoidRootPart")
+
+        local function onAnim(track)
+            if not blockEnabled then return end
+            local anim = track.Animation
+            local animId = anim and anim.AnimationId and tostring(anim.AnimationId):match("%d+")
+            if animId and targetAnims[animId] then
+                if myHRP and targetHRP then
+                    local distance = (myHRP.Position - targetHRP.Position).Magnitude
+                    if distance <= RANGE then
+                        local animData = targetAnims[animId]
+                        if animData.delay then
+                            task.delay(animData.delay, fireSkill)
+                        else
+                            fireSkill()
+                        end
+                    end
+                end
+            end
+        end
+
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        local conn
+        if animator then
+            conn = animator.AnimationPlayed:Connect(onAnim)
+        else
+            conn = humanoid.AnimationPlayed:Connect(onAnim)
+        end
+        table.insert(humConnections, conn)
+    end
+
+    if blockEnabled then
+        for _, killer in ipairs(KillersFolder:GetChildren()) do
+            local hum = killer:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hookHumanoid(hum, killer)
+            end
+        end
+
+        local descConn
+        descConn = KillersFolder.DescendantAdded:Connect(function(desc)
+            if not blockEnabled then
+                descConn:Disconnect()
+                return
+            end
+            if desc:IsA("Humanoid") then
+                local model = desc.Parent
+                if model and model:IsA("Model") then
+                    hookHumanoid(desc, model)
+                end
+            end
+        end)
+        table.insert(humConnections, descConn)
+    else
+        for _, conn in ipairs(humConnections) do
+            if conn and conn.Disconnect then
+                conn:Disconnect()
+            end
+        end
+        humConnections = {}
+    end
+end)
+
+if settings.blockEnabled then
+    task.spawn(function()
+        Toggle3:SetValue(true)
+    end)
+end
+
+
+local Lighting = game:GetService("Lighting")
+local fbConnections = {}
+
+local Toggle4 = Tabs.Main:CreateToggle("MyToggle", {Title = "fb + nofog", Default = settings.fb or false})
+Toggle4:OnChanged(function()
+    if not Toggle4Interacted then
+        Toggle4Interacted = true
+        return
+    end
+
+    fb = not fb
+    settings.fb = fb
+    SaveSettings()
+
+    if fb then
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = false
+        Lighting.ClockTime = 14
+
+        for _, v in pairs(Lighting:GetChildren()) do
+            if v:IsA("Atmosphere") then
+                v:Destroy()
+            end
+        end
+
+        fbConnections.Brightness = Lighting:GetPropertyChangedSignal("Brightness"):Connect(function()
+            if Lighting.Brightness ~= 2 then
+                Lighting.Brightness = 2
+            end
+        end)
+        fbConnections.GlobalShadows = Lighting:GetPropertyChangedSignal("GlobalShadows"):Connect(function()
+            if Lighting.GlobalShadows ~= false then
+                Lighting.GlobalShadows = false
+            end
+        end)
+        fbConnections.ClockTime = Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+            if Lighting.ClockTime ~= 14 then
+                Lighting.ClockTime = 14
+            end
+        end)
+        fbConnections.ChildAdded = Lighting.ChildAdded:Connect(function(child)
+            if child:IsA("Atmosphere") then
+                task.wait()
+                child:Destroy()
+            end
+        end)
+    else
+        for _, conn in pairs(fbConnections) do
+            if conn and conn.Disconnect then
+                conn:Disconnect()
+            end
+        end
+        fbConnections = {}
+    end
+end)
+
+if settings.fb then
+    task.spawn(function()
+        Toggle4:SetValue(true)
+    end)
+end
+
+local Tabs = {
+    Main = Window:CreateTab{
+        Title = "esp",
+        Icon = "nil"
+    }
+}
+
+local Toggle20 = Tabs.Main:CreateToggle("MyToggle", {Title = "esp generator", Default = settings.espgen or false})
+
+Toggle20:OnChanged(function()
+    if not Toggle20Interacted then
+        Toggle20Interacted = true
+        return
+    end
+
+    espgen = not espgen
+    settings.espgen = espgen
+    SaveSettings()
+    
+    local gens = {}
+
+    local function updateHighlight(generator, highlight)
+        local numVal = generator:FindFirstChildWhichIsA("NumberValue")
+        if numVal then
+            if numVal.Value < 100 then
+                highlight.FillColor = Color3.fromRGB(0, 0, 255)
+                highlight.OutlineColor = Color3.fromRGB(0, 0, 127)
+            else
+                highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                highlight.OutlineColor = Color3.fromRGB(0, 170, 0)
+            end
+        end
+    end
+
+    local function createHighlight(generator)
+        if generator:FindFirstChild("CustomHighlight") then return end
+        if not generator:IsA("Model") then return end
+        if generator.Name ~= "Generator" then return end
+
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "CustomHighlight"
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.Parent = generator
+
+        updateHighlight(generator, highlight)
+
+        local numVal = generator:FindFirstChildWhichIsA("NumberValue")
+        if numVal then
+            table.insert(gens, numVal:GetPropertyChangedSignal("Value"):Connect(function()
+                updateHighlight(generator, highlight)
+            end))
+        end
+    end
+
+    local function applyToMap(map)
+
+        for _, obj in ipairs(map:GetChildren()) do
+            if obj.Name == "Generator" then
+                createHighlight(obj)
+            end
+        end
+
+        table.insert(gens, map.ChildAdded:Connect(function(child)
+            if child.Name == "Generator" then
+                createHighlight(child)
+            end
+        end))
+    end
+
+    if espgen then
+
+        local function hookMap(map)
+            if map.Name == "Map" then
+                applyToMap(map)
+            end
+        end
+
+        local ingame = workspace:WaitForChild("Map"):WaitForChild("Ingame")
+        for _, child in ipairs(ingame:GetChildren()) do
+            hookMap(child)
+        end
+
+        table.insert(gens, ingame.ChildAdded:Connect(hookMap))
+    else
+
+        for _, c in ipairs(gens) do
+            c:Disconnect()
+        end
+        table.clear(gens)
+
+        local currentMap = workspace:FindFirstChild("Map") and workspace.Map.Ingame:FindFirstChild("Map")
+        if currentMap then
+            for _, obj in ipairs(currentMap:GetChildren()) do
+                if obj.Name == "Generator" then
+                    local hl = obj:FindFirstChild("CustomHighlight")
+                    if hl then
+                        hl:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end)
+
+if settings.espgen then
+    task.spawn(function()
+        Toggle20:SetValue(true)
+    end)
+end
+
+local Toggle21 = Tabs.Main:CreateToggle("MyToggle", {Title = "esp survivor", Default = settings.espsurvivor or false})
+
+Toggle21:OnChanged(function()
+    if not Toggle21Interacted then
+        Toggle21Interacted = true
+        return
+    end
+
+    espsurvivor = not espsurvivor
+    settings.espsurvivor = espsurvivor
+    SaveSettings()
+
+    local SurvivorFolder = workspace.Players.Survivors
+
+    local function createHighlight(model)
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "CustomHighlight"
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = Color3.fromRGB(255, 191, 0)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = Color3.fromRGB(255, 191, 0)
+        highlight.OutlineTransparency = 0
+        highlight.Parent = model
+    end
+
+    if espsurvivor then
+
+        for _, model in ipairs(SurvivorFolder:GetChildren()) do
+            if model:IsA("Model") then
+                createHighlight(model)
+            end
+        end
+
+        SurvivorFolder.ChildAdded:Connect(function(child)
+            if child:IsA("Model") then
+                createHighlight(child)
+            end
+        end)
+    else
+
+        for _, model in ipairs(SurvivorFolder:GetChildren()) do
+            local hl = model:FindFirstChild("CustomHighlight")
+            if hl then
+                hl:Destroy()
+            end
+        end
+    end
+end)
+
+if settings.espsurvivor then
+    task.spawn(function()
+        Toggle21:SetValue(true)
+    end)
+end
+
+local Toggle22 = Tabs.Main:CreateToggle("MyToggle", {Title = "esp killer", Default = settings.espkiller or false})
+
+Toggle22:OnChanged(function()
+    if not Toggle22Interacted then
+        Toggle22Interacted = true
+        return
+    end
+
+    espkiller = not espkiller
+    settings.espkiller = espkiller
+    SaveSettings()
+
+    local KillerFolder = workspace.Players.Killers
+
+    local function createHighlight(model)
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "CustomHighlight"
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = Color3.fromRGB(170, 0, 0)
+        highlight.OutlineTransparency = 0
+        highlight.Parent = model
+    end
+
+    if espkiller then
+
+        for _, model in ipairs(KillerFolder:GetChildren()) do
+            if model:IsA("Model") then
+                createHighlight(model)
+            end
+        end
+
+        KillerFolder.ChildAdded:Connect(function(child)
+            if child:IsA("Model") then
+                createHighlight(child)
+            end
+        end)
+    else
+
+        for _, model in ipairs(KillerFolder:GetChildren()) do
+            local hl = model:FindFirstChild("CustomHighlight")
+            if hl then
+                hl:Destroy()
+            end
+        end
+    end
+end)
+
+if settings.espkiller then
+    task.spawn(function()
+        Toggle22:SetValue(true)
+    end)
+end
+
+local Toggle23 = Tabs.Main:CreateToggle("MyToggle", {Title = "esp item", Default = settings.espitem or false})
+
+local espVisuals = {}
+local espEnabled = false
+local mapConnection
+
+Toggle23:OnChanged(function()
+    if not Toggle23Interacted then
+        Toggle23Interacted = true
+        return
+    end
+
+    espitem = not espitem
+    settings.espitem = espitem
+    SaveSettings()
+
+    for _, v in pairs(espVisuals) do
+        if v and v.Parent then
+            v:Destroy()
+        end
+    end
+    espVisuals = {}
+
+    if mapConnection then
+        mapConnection:Disconnect()
+        mapConnection = nil
+    end
+
+    if espEnabled then
+        local function createTextESP(model)
+            if not model:IsA("Model") then return end
+            if not model:FindFirstChildWhichIsA("BasePart") then return end
+
+            if model.Name == "BloxyCola" or model.Name == "Medkit" then
+                local billboardGui = Instance.new("BillboardGui")
+                billboardGui.Parent = model
+                billboardGui.Adornee = model
+                billboardGui.Size = UDim2.new(0, 200, 0, 30)
+                billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+                billboardGui.AlwaysOnTop = true
+
+                local textLabel = Instance.new("TextLabel")
+                textLabel.Parent = billboardGui
+                textLabel.Size = UDim2.new(1, 0, 1, 0)
+                textLabel.BackgroundTransparency = 1
+                textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                textLabel.TextStrokeTransparency = 0.3
+                textLabel.TextSize = 8
+                textLabel.Font = Enum.Font.SourceSansBold
+                textLabel.Text = "[" .. model.Name .. "]"
+
+                table.insert(espVisuals, billboardGui)
+            end
+        end
+
+        local function getActiveMap()
+            local map = workspace:FindFirstChild("Map")
+            if map and map:FindFirstChild("Ingame") then
+                local ingame = map.Ingame:FindFirstChild("Map")
+                if ingame then
+                    return ingame
+                end
+            end
+            return nil
+        end
+
+        task.spawn(function()
+            local itemsFolder
+            repeat
+                itemsFolder = getActiveMap()
+                task.wait(1)
+            until itemsFolder or not espEnabled
+            if not espEnabled then return end
+
+            for _, model in pairs(itemsFolder:GetChildren()) do
+                createTextESP(model)
+            end
+
+            mapConnection = itemsFolder.ChildAdded:Connect(function(newModel)
+                if espEnabled then
+                    createTextESP(newModel)
+                end
+            end)
+
+            workspace.Map.Ingame.ChildAdded:Connect(function(newMap)
+                if newMap.Name == "Map" then
+
+                    for _, v in pairs(espVisuals) do
+                        if v and v.Parent then
+                            v:Destroy()
+                        end
+                    end
+                    espVisuals = {}
+                    if mapConnection then
+                        mapConnection:Disconnect()
+                    end
+                    mapConnection = nil
+                    task.wait(0.5)
+                    if espEnabled then
+                        for _, model in pairs(newMap:GetChildren()) do
+                            createTextESP(model)
+                        end
+                        mapConnection = newMap.ChildAdded:Connect(function(newModel)
+                            if espEnabled then
+                                createTextESP(newModel)
+                            end
+                        end)
+                    end
+                end
+            end)
+        end)
+    end
+end)
+
+if settings.espitem then
+    task.spawn(function()
+        Toggle23:SetValue(true)
+    end)
+end
+
+local Tabs = {
+    Main = Window:CreateTab{
+        Title = "Setting",
+        Icon = "nil"
+    }
+}
+
+local staminainput = require(game.ReplicatedStorage.Systems.Character.Game.Sprinting)
+
+settings.staminainput = settings.staminainput or {}
+settings.staminainput.DefaultConfig = settings.staminainput.DefaultConfig or {}
+
+local Input = Tabs.Main:CreateInput("Input", {
+    Title = "Stamina",
+    Default = settings.staminainput.MaxStamina or "100",
+    Placeholder = "",
+    Numeric = true,
+    Finished = false,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+
+            staminainput.DefaultConfig.MaxStamina = num
+            staminainput.MaxStamina = num
+            staminainput.Stamina = num
+
+            settings.staminainput.DefaultConfig.MaxStamina = num
+            settings.staminainput.MaxStamina = num
+            settings.staminainput.Stamina = num
+            SaveSettings()
+        end
+    end
+})
+
+if settings.staminainput and settings.staminainput.MaxStamina then
+    local val = settings.staminainput.MaxStamina
+    staminainput.DefaultConfig.MaxStamina = val
+    staminainput.MaxStamina = val
+    staminainput.Stamina = val
+end
+
+local Input = Tabs.Main:CreateInput("Input", {
+    Title = "Generator time",
+    Default = settings.gentime or "3.5",
+    Placeholder = "",
+    Numeric = true,
+    Finished = false,
+    Callback = function(Value)
+
+        local num = tonumber(Value)
+        if num then
+            gentime = num
+            
+			settings.gentime = num
+            SaveSettings()
+        end
+    end
+})
+
+if settings.gentime then
+    gentime = val
+end
+
+local Toggle30 = Tabs.Main:CreateToggle("MyToggle", {Title = "afk generator (legit)", Default = settings.afkgen or false})
+local afkgen = false
+local genConnections = {}
+local repairThread, repairing, currentGen = nil, false, nil
+
+local function stopAutoRepair()
+    if repairThread then
+        pcall(task.cancel, repairThread)
+        repairThread = nil
+    end
+    repairing = false
+    currentGen = nil
+end
+
+local function cleanupAll()
+
+    stopAutoRepair()
+    afkgen = false
+
+    for _, conn in ipairs(genConnections) do
+        if conn and typeof(conn) == "RBXScriptConnection" then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    table.clear(genConnections)
+
+    repairing = false
+    currentGen = nil
+    repairThread = nil
+
+end
+
+Toggle30:OnChanged(function()
+    if not Toggle30Interacted then
+        Toggle30Interacted = true
+        return
+    end
+
+    afkgen = not afkgen
+
+    if afkgen then
+		game:GetService("GuiService").TouchControlsEnable = false
+
+        local Players = game:GetService("Players")
+        local PathfindingService = game:GetService("PathfindingService")
+        local LocalPlayer = Players.LocalPlayer
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+        local module_upvr = require(ReplicatedStorage.Systems.Character.Game.Sprinting)
+        if not module_upvr.DefaultsSet then
+            module_upvr.Init()
+        end
+
+        local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local Humanoid = Character:WaitForChild("Humanoid")
+        local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+        local function moveTo(targetPart)
+            if not maingen then return end
+            if not targetPart or not targetPart.Position then return end
+
+            local path = PathfindingService:CreatePath({
+                AgentRadius = 2,
+                AgentHeight = 5,
+                AgentCanJump = false
+            })
+
+            path:ComputeAsync(HumanoidRootPart.Position, targetPart.Position)
+            if path.Status == Enum.PathStatus.Success then
+                for _, waypoint in ipairs(path:GetWaypoints()) do
+                    if not maingen then return end
+                    Humanoid:MoveTo(waypoint.Position)
+                    Humanoid.MoveToFinished:Wait()
+                end
+            else
+                Humanoid:MoveTo(targetPart.Position)
+                Humanoid.MoveToFinished:Wait()
+            end
+
+            repeat task.wait(0.1) until not maingen or (HumanoidRootPart.Position - targetPart.Position).Magnitude < 5
+        end
+
+        local function startAutoRepair(generator)
+            stopAutoRepair()
+            if not maingen then return end
+            if not generator or not generator.Parent then return end
+
+            local progress = generator:FindFirstChild("Progress")
+            local remotes = generator:FindFirstChild("Remotes")
+            if not (progress and progress:IsA("NumberValue")) then return end
+            if not remotes then return end
+
+            local re = remotes:FindFirstChild("RE")
+            if not (re and re:IsA("RemoteEvent")) then return end
+
+            currentGen = generator
+            repairing = true
+
+            task.spawn(function()
+                while repairing and currentGen == generator and maingen do
+                    local puzzleUI = Players.LocalPlayer.PlayerGui:FindFirstChild("PuzzleUI")
+                    if not puzzleUI and progress.Value < 100 then
+                        local positions = generator:FindFirstChild("Positions")
+                        local main = generator:FindFirstChild("Main")
+                        local prompt = main and (main:FindFirstChild("Prompt") or main:FindFirstChildWhichIsA("ProximityPrompt"))
+                        if positions and prompt then
+                            local retryTarget = positions:FindFirstChild("Center") or positions:FindFirstChildWhichIsA("BasePart")
+                            if retryTarget then
+                                moveTo(retryTarget)
+                                fireproximityprompt(prompt)
+                            end
+                        end
+                    end
+                    task.wait(0.3)
+                end
+            end)
+
+            repairThread = task.spawn(function()
+                task.spawn(function()
+                    while repairing and currentGen == generator and maingen do
+                        if progress.Value >= 100 then
+                            stopAutoRepair()
+                            break
+                        end
+                        task.wait(0.2)
+                    end
+                end)
+
+                while repairing and currentGen == generator and maingen do
+                    task.wait(gentime)
+                    if repairing and progress.Value < 100 then
+                        pcall(function()
+                            re:FireServer()
+                        end)
+                    end
+                end
+            end)
+        end
+
+        local function getNearestGeneratorBelow100()
+            if not maingen then return end
+            local mapFolder = workspace:FindFirstChild("Map")
+            if not mapFolder then return nil end
+
+            local ingame = mapFolder:FindFirstChild("Ingame")
+            if not ingame then return nil end
+
+            local map = ingame:FindFirstChild("Map")
+            if not map then return nil end
+
+            local nearest, shortest = nil, math.huge
+            for _, gen in ipairs(map:GetChildren()) do
+                if gen.Name == "Generator" then
+                    local progress = gen:FindFirstChild("Progress")
+                    local positions = gen:FindFirstChild("Positions")
+                    if progress and progress:IsA("NumberValue") and progress.Value < 100 and positions then
+                        local center = positions:FindFirstChild("Center")
+                        if center then
+                            local dist = (HumanoidRootPart.Position - center.Position).Magnitude
+                            if dist < shortest then
+                                shortest = dist
+                                nearest = gen
+                            end
+                        end
+                    end
+                end
+            end
+            return nearest
+        end
+
+        local function autoRepairLoop()
+            local map = workspace:WaitForChild("Map"):WaitForChild("Ingame"):WaitForChild("Map")
+
+            repeat task.wait(1) until map:FindFirstChild("Generator")
+
+            while maingen and task.wait(1) do
+                if repairing then continue end
+                local gen = getNearestGeneratorBelow100()
+                if not gen then
+                    break
+                end
+
+                local positionsFolder = gen:FindFirstChild("Positions")
+                local main = gen:FindFirstChild("Main")
+                local prompt = main and (main:FindFirstChild("Prompt") or main:FindFirstChildWhichIsA("ProximityPrompt"))
+                if not positionsFolder or not prompt then continue end
+
+                local positions = {"Center", "Right", "Left"}
+                for _, posName in ipairs(positions) do
+                    if not maingen then return end
+                    local targetPart = positionsFolder:FindFirstChild(posName)
+                    if targetPart then
+                        print("Moving to", posName, "of", gen.Name)
+                        moveTo(targetPart)
+                        fireproximityprompt(prompt)
+                        task.wait(0.5)
+                        if Players.LocalPlayer.PlayerGui:FindFirstChild("PuzzleUI") then
+                            startAutoRepair(gen)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+
+        local function toggleSprintAfterDelay()
+            task.wait(6)
+            module_upvr.__sprintedEvent:Fire(true)
+        end
+
+        local function onMapReset()
+            stopAutoRepair()
+            task.wait(6)
+            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            Humanoid = Character:WaitForChild("Humanoid")
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+            task.spawn(autoRepairLoop)
+        end
+
+        table.insert(genConnections, workspace.Map.Ingame.ChildAdded:Connect(function(child)
+            if child.Name == "Map" then
+                task.spawn(toggleSprintAfterDelay)
+            end
+        end))
+
+        local function initAutoSystem()
+            task.spawn(autoRepairLoop)
+
+            table.insert(genConnections, workspace.Map.Ingame.ChildRemoved:Connect(function(child)
+                if child.Name == "Map" then
+                    onMapReset()
+                end
+            end))
+        end
+
+        table.insert(genConnections, LocalPlayer.CharacterAdded:Connect(function(char)
+            Character = char
+            Humanoid = char:WaitForChild("Humanoid")
+            HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+        end))
+
+        task.spawn(initAutoSystem)
+
+    else
+		game:GetService("GuiService").TouchControlsEnable = true
+        cleanupAll()
+    end
+end)
+
+if settings.afkgen then
+    task.spawn(function()
+        Toggle30:SetValue(true)
+    end)
+end
