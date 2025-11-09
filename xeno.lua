@@ -62,10 +62,10 @@ Toggle1:OnChanged(function()
 
     if infstam then
 		customstam.DefaultConfig.StaminaLossDisabled = true
-		customstam.module_upvr.StaminaLossDisabled = true
+		customstam.StaminaLossDisabled = true
 	else
 		customstam.DefaultConfig.StaminaLossDisabled = false
-		customstam.module_upvr.StaminaLossDisabled = false
+		customstam.StaminaLossDisabled = false
 	end
 end)
 
